@@ -4,7 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+
 #include <pthread.h>
+
 #include <arpa/inet.h>
 
 // socks
@@ -18,6 +20,8 @@
 #define SA struct sockaddr
 
 // mem
+//
+
 #define soc_cv_av
 #include <assert.h>
 #include <errno.h>
@@ -29,6 +33,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+
 #include "hps_soc_system.h"
 #include "hps_linux.h"
 
@@ -37,17 +42,23 @@
 #define FIFO_FRAMING_RX_FULL		  ((*(fifo_framing_rxstatus_ptr+1))& 1 )
 #define FIFO_FRAMING_RX_EMPTY	  ((*(fifo_framing_rxstatus_ptr+1))& 2 )
 
+// indsat
 #define FIFO_CONTROL_TX_FULL		  ((*(fifo_control_txstatus_ptr+1))& 1 )
 #define FIFO_CONTROL_TX_EMPTY	  ((*(fifo_control_txstatus_ptr+1))& 2 )
 #define FIFO_CONTROL_RX_FULL		  ((*(fifo_control_rxstatus_ptr+1))& 1 )
 #define FIFO_CONTROL_RX_EMPTY	  ((*(fifo_control_rxstatus_ptr+1))& 2 )
+// indsat slut
 
 #define alt_write_word(dest, src)       (*ALT_CAST(volatile uint32_t *, (dest)) = (src))
+
+
 
 // Declarations
     bool run = false;
     char exitstr[] = "exit";
-    char* usercomm;
+    char usercomm[4] = {0};
+    //char msg[44] = {0};
+    //char arguments[7] = {0};
     int env = 20;
     bool fullrun, enable_vid_dat, enable_vid_loop, enable_vid_met, enable_backend1, enable_backend2, enable_fifo;
     char boolCheck;
@@ -68,6 +79,7 @@
     int sock_video_loop, valreadloop, recv_len_loop ;
     struct sockaddr_in addressVidLoop;//, si_other;
     int addrlenLoop = sizeof(addressVidLoop);
+    //char bufferRec[1024] = {0};
 
     // Video meta sock
     bool runVideoMeta1 = true;
@@ -94,10 +106,12 @@ volatile unsigned char * fifo_framing_receive_ptr = NULL ;
 volatile unsigned int  * fifo_framing_rxstatus_ptr = NULL ;
 volatile unsigned char * fifo_framing_transmit_ptr = NULL ;
 volatile unsigned int  * fifo_framing_txstatus_ptr = NULL ;
+// Indsat
 volatile unsigned char* fifo_control_receive_ptr = NULL;
 volatile unsigned int* fifo_control_rxstatus_ptr = NULL;
 volatile unsigned char* fifo_control_transmit_ptr = NULL;
 volatile unsigned int* fifo_control_txstatus_ptr = NULL;
+// Indsat slut
 volatile unsigned int  * fpga_leds = NULL;
 volatile unsigned int  * fpga_switches = NULL;
 
@@ -141,10 +155,12 @@ void mmap_fpga_peripherals() {
 	fifo_framing_receive_ptr = (unsigned char *) (h2f_axi_master + FIFO_RX_VIDEO_OUT_BASE);
 	fifo_framing_rxstatus_ptr = (unsigned int *)(h2f_lw_axi_master +  FIFO_RX_VIDEO_OUT_CSR_BASE);
 
+    // Indsat
 	fifo_control_transmit_ptr = (unsigned char*)(h2f_lw_axi_master + FIFO_CONTROL_TX_IN_BASE);
 	fifo_control_txstatus_ptr = (unsigned int*)(h2f_lw_axi_master + FIFO_CONTROL_TX_IN_CSR_BASE);
 	fifo_control_receive_ptr = (unsigned char*)(h2f_lw_axi_master + FIFO_CONTROL_RX_OUT_BASE);
 	fifo_control_rxstatus_ptr = (unsigned int*)(h2f_lw_axi_master + FIFO_CONTROL_RX_OUT_CSR_BASE);
+	// Indsat slut
 
 	fpga_leds =   (unsigned int *) (h2f_lw_axi_master +  HPS_FPGA_LEDS_BASE);
 	fpga_switches = h2f_lw_axi_master + HPS_FPGA_SWITCHES_BASE;
@@ -171,13 +187,15 @@ void munmap_fpga_peripherals() {
 	fifo_framing_txstatus_ptr = NULL ;
 	fifo_framing_receive_ptr = NULL ;
 	fifo_framing_rxstatus_ptr = NULL ;
+    // Indsat
 	fifo_control_transmit_ptr = NULL ;
 	fifo_control_txstatus_ptr = NULL ;
 	fifo_control_receive_ptr = NULL ;
 	fifo_control_rxstatus_ptr = NULL ;
+	// Indsat slut
 
 }
-// VIDEO to FIFO (video data)
+// VIDEO til FIFO (video data)
 void *videoRecThread(void *vargp)
 {
     printf("VideoRecThread started with id: %lu\n", pthread_self());
@@ -193,32 +211,47 @@ void *videoRecThread(void *vargp)
 	    }
 	    //print details of the client/peer and the data received
 	    printf("Received packet from %s:%d\n", inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port));
+	    // Change 1, remove atoi - printf("Data: %s\n" , atoi(buffer));
+	    //printf("Data: %s\n" , buffer);
 	    bit_rate += recv_len * 8;
 	    printf("Data: ");
+	    //printf("%s" , buffer);
 		if (sendto(sock_video_loop, buffer, sizeof(buffer), 0, (struct  sockaddr*) &addressVidLoop, sizeof(addressVidLoop)) == -1){}
 	    for (int i = 0; i < recv_len; i++)
 	    {
 	    	smallBuff[i % 2] = buffer[i];
+	    	//printf("%0x" , buffer[i]);
 	    	if (i % 2 == 1)
         	{
+                //printf("%0x" , (unsigned int)strtol(smallBuff, NULL, 16)); // hex format
+                //printf("%u" , (unsigned char)strtol(smallBuff, NULL, 16)); // decimal format
         	    if (enable_fifo && env == 0)
         	    {
+            		// Change 1, remove atoi, how we do? what data we get?
             	        if (!FIFO_FRAMING_TX_FULL) {* fifo_framing_transmit_ptr=(unsigned char)strtol(smallBuff, NULL, 16);};
             	    }
                     if (enable_vid_loop)
                     {
 		    printf("%0x%0x" , smallBuff[0],smallBuff[1]);
+                    //now reply the client with the same data
+                    // indsat - regin test
+		    
+                    //if (sendto(sock_video_loop, smallBuff, 2, 0, (struct  sockaddr*) &addressVidLoop, sizeof(addressVidLoop)) == -1){}
+//if (sendto(sock_video_loop, smallBuff, 2, 0, (struct addressVidRec*) &si_other, slen) == -1){}
+                    // indsat slut
                 }
 		
         	}
 	    }
         printf("\n");
 
+
+
    	    memset(buffer, 0, 1024);
     }
 }
 
-// Bit rate messenger
+// VIDEO control data til backend --- Change 1, ændres til bitrate messenger
 void *videoMetaThreadCli(void *vargp)
 {
     printf("VideoMeta1Thread started with id: %lu\n", pthread_self());
@@ -232,6 +265,7 @@ void *videoMetaThreadCli(void *vargp)
         fflush(stdout);
         //try to receive some data, this is a blocking call
         sprintf(bufferMeta1, "%d", bit_rate);
+        //buffer = (char *)bit_rate;
         printf("%s\n",bufferMeta1 );
         // redirect data
         if (sendto(vidcl2, bufferMeta1, video_meta_len, 0, (struct sockaddr*) &cli_vid_met2, slenMet2) == -1)
@@ -241,6 +275,31 @@ void *videoMetaThreadCli(void *vargp)
 
    	memset(bufferMeta1, 0, 1024);
    	bit_rate = 0;
+        /*
+        printf("Waiting for data...");
+        fflush(stdout);
+        //try to receive some data, this is a blocking call
+        valread = read( vidcl , bufferMeta1, 1024);
+        printf("%s\n",bufferMeta1 );
+        // redirect data
+        if (sendto(vidcl2, bufferMeta1, video_meta_len, 0, (struct sockaddr*) &cli_vid_met2, slenMet2) == -1)
+	    {
+	    	printf("data redirection to backend from video failed\n");
+	    }
+        //send(new_socket , hello , strlen(hello) , 0 );
+        //printf("Hello message sent\n");
+        
+	    if ((video_meta_len = recvfrom(sock_video_meta, bufferMeta1, BUFLEN, 0, (struct sockaddr *) &cli_vid_met, &slenMet1)) == -1)
+	    {
+		    perror("VideoMeta recieve failed");
+            exit(EXIT_FAILURE);
+	    }
+	    //print details of the client/peer and the data received
+	    printf("Received packet from %s:%d\n", inet_ntoa(cli_vid_met.sin_addr), ntohs(cli_vid_met.sin_port));
+	    printf("Data: %d\n" , atoi(bufferMeta1));
+        
+   	    memset(bufferMeta1, 0, 1024);
+   	*/
     }
 }
 
@@ -281,14 +340,15 @@ void *OBThreadBackend(void *vargp)
 
         if (enable_fifo && env == 0)
         {
-            // Drop if full
+            // Dropper hvis fuld
             if (!FIFO_CONTROL_TX_FULL) {* fifo_control_transmit_ptr=(unsigned char)atoi(bufferOB);};
         }
+
    	    memset( bufferOB, 0, 1024);
    	}
 }
 
-// Control data from FIFO to backend
+// Control data fra FIFO til backend
 void *BackendThreadOB(void *vargp)
 {
     printf("On board to backend thread started with id: %lu\n", pthread_self());
@@ -305,6 +365,8 @@ void *BackendThreadOB(void *vargp)
 			NBackun = (unsigned)NBack;
 			printf("This is sending unsigned: %u\n",(unsigned)NBack);
 			printf("  ");
+            //bufferRec[0] = (char *)N;
+            //bufferRec[0] = (unsigned)N;
             memcpy(bufferOBBack, (char*)&NBackun, sizeof(NBackun));
             printf("This is sending buffer: %c\n",bufferOBBack[0]);
             printf("This is sending buffer attempt 2: %c\n",bufferOBBack[1]);
@@ -320,9 +382,10 @@ void *BackendThreadOB(void *vargp)
    	}
 }
 
-// VIDEO data from FIFO to video
+// VIDEO data fra FIFO til video
 void *OBThreadFIFO(void *vargp)
 {
+    //unsigned char N;
     char N;
     unsigned int Nun;
     memset(bufferRec, 0, 1024);
@@ -334,6 +397,8 @@ void *OBThreadFIFO(void *vargp)
 			Nun = (unsigned)N;
 			printf("This is sending unsigned: %u\n",(unsigned)N);
 			printf("  ");
+            //bufferRec[0] = (char *)N;
+            //bufferRec[0] = (unsigned)N;
             memcpy(bufferRec, (char*)&Nun, sizeof(Nun));
             printf("This is sending buffer: %c\n",bufferRec[0]);
             printf("This is sending buffer attempt 2: %c\n",bufferRec[1]);
@@ -352,6 +417,10 @@ void *OBThreadFIFO(void *vargp)
 int main(int argc, char const *argv[])
 {
     printf("Initiating setup.\n");
+
+    //int scanok;
+	//unsigned char N;
+	//int N2;
 	printf("DE1-SoC linux demo\n");
 
     while (env != 0 && env != 1)
@@ -487,6 +556,7 @@ int main(int argc, char const *argv[])
         }
     }
 
+
     // thread pointers
     printf("Creating thread pointers\n");
     pthread_t thread_id_vid, thread_id_vid_OB, thread_id_met_vid, thread_id_met_vid2, thread_id_OB, thread_id_OB_Back;
@@ -501,6 +571,7 @@ int main(int argc, char const *argv[])
         perror("video data socket failed");
         exit(EXIT_FAILURE);
     }
+
 
     // Socket-port 8888
     if (setsockopt(sock_video_data, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
@@ -531,11 +602,28 @@ int main(int argc, char const *argv[])
         exit(EXIT_FAILURE);
     }
 
-    // Socket-port 8889
 
+    // Socket-port 8889
+    /*if (setsockopt(sock_video_loop, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                                                  &opt, sizeof(opt)))
+    {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+*/
     addressVidLoop.sin_family = AF_INET;
-    addressVidLoop.sin_addr.s_addr = inet_addr("10.16.173.0"); // Video receiver address
+    addressVidLoop.sin_addr.s_addr = inet_addr("10.16.173.0"); // THIS IS ADDRESS
     addressVidLoop.sin_port = htons( 8889 );
+
+    // Forcefully attaching socket to the port 8889
+    /*
+    if (bind(sock_video_loop, (SA*)&addressVidLoop,
+                                 sizeof(addressVidLoop))<0)
+    {
+        perror("bind failed");
+        exit(EXIT_FAILURE);
+    }
+    */
 
     // Video meta
     printf("(2/4) - Video Meta socket video side initiating\n");
@@ -580,12 +668,14 @@ int main(int argc, char const *argv[])
     servaddr_backend.sin_addr.s_addr = INADDR_ANY;
     servaddr_backend.sin_port = htons( OBPORT );
 
+
     // Binding newly created socket to given IP and verification
     if ((bind(sock_ob, (SA*)&servaddr_backend, sizeof(servaddr_backend))) < 0) {
         perror("bind failed");
         exit(EXIT_FAILURE);
     }
     printf("Sockets declared\n");
+
 
     if (enable_vid_met) {
         if ((listen(sock_video_meta, 5)) != 0) {
@@ -643,7 +733,8 @@ int main(int argc, char const *argv[])
             printf("server accepted the client...\n");
     }
 
-    //Starting threads
+
+    //starting threads
     printf("Starting threads\n");
 
     if (enable_vid_dat)
@@ -652,28 +743,36 @@ int main(int argc, char const *argv[])
         if ( env == 0 )
         {
             pthread_create(&thread_id_vid_OB, NULL, OBThreadFIFO, NULL);
+
         }
     }
     if (enable_vid_met || enable_backend1)
     {
         pthread_create(&thread_id_met_vid, NULL, videoMetaThreadCli, NULL);
+        //Change 1, depricated - pthread_create(&thread_id_met_vid2, NULL, videoMetaThreadBackend, NULL);
     }
     if (enable_backend2 || enable_fifo)
     {
-        pthread_create(&thread_id_OB, NULL, OBThreadBackend, NULL);
-        pthread_create(&thread_id_OB_Back, NULL, BackendThreadOB, NULL);
+        //pthread_create(&thread_id_OB, NULL, OBThreadBackend, NULL);
+        if (env == 0)
+            pthread_create(&thread_id_OB_Back, NULL, BackendThreadOB, NULL);
     }
+
 
     while(run)
     {
         printf("enter 'exit' to exit\n");
         scanf(" %s", usercomm);
+        printf("scanf is %s", usercomm);
         if (strcmp(exitstr, usercomm) == 0){
+            printf("Exitting");
             run = false;
         }
-		else if(strlen(usercom) == 4){
-			if (sendto(sock_ob, bufferOBBack, strlen(bufferOBBack), 0, (struct sockaddr*) &si_other, slen) == -1)
-		}
+	else{
+	    printf("sending %s", usercomm);
+	    if (sendto(backendcl, usercomm, backend_len, 0, (struct sockaddr*) &cli_backend, slenOB) == -1){}
+	    //if (sendto(vidcl2, bufferMeta1, video_meta_len, 0, (struct sockaddr*) &cli_vid_met2, slenMet2) == -1)
+	}
     }
     if (env == 0)
     {
